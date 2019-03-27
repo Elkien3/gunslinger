@@ -147,6 +147,10 @@ local function fire(stack, player, base_spread, max_spread, pellets)
 		local p2 = vector.add(p1, vector.multiply(dir, def.range))
 		local ray = minetest.raycast(p1, p2)
 		local pointed = ray:next()
+		
+		if pointed and pointed.ref and pointed.ref == player then
+			pointed = ray:next()
+		end
 
 		if pointed and pointed.intersection_point and pointed.type == "node" then
 			minetest.add_particle({
