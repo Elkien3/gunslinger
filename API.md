@@ -96,6 +96,8 @@ This file aims to document all the internal and external methods of the `gunslin
 - `base_dmg` [number]: Base amount of damage dealt in HP.
 - `pellets` [number]: Number of bullets per shot, used for shotguns.
 - `magazine` [boolean]: If the gun's ammo is a magazine, set to true, leave nil or false otherwise.
+- `vertical_recoil` [number]: max amount of moving the players vertical look upwards. the min amount is vertical_recoil/2
+- `horizontal_recoil` [number]: the max amount of moving the players horizontal look side to side. finds a value between horizontal_recoil and -horizontal_recoil.
 - `mode` [string]: Firing mode.
   - `"manual"`: One shot per-click, but requires manual loading for every round; aka Bolt-action.
   - `"semi-automatic"`: One shot per-click.
