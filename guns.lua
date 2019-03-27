@@ -10,5 +10,8 @@ gunslinger.register_gun("gunslinger:cheetah", {
 	base_dmg = 1,
 	fire_rate = 6,
 	clip_size = 50,
-	range = 80
+	range = 80,
+	base_spread = 20,
+	max_spread = 200,
+	ammo = "gunslinger:ammo"
 })

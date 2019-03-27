@@ -3,6 +3,11 @@ gunslinger = {}
 local max_wear = 65534
 local lite = minetest.settings:get_bool("gunslinger.lite")
 
+--get the walking speed
+local max_speed = minetest.settings:get("movement_speed_walk") or 4
+-- account a little bit for jumping and falling
+max_speed = max_speed + 2
+
 local guns = {}
 local types = {}
 local automatic = {}
@@ -16,7 +21,9 @@ local interval = {}
 local function play_sound(sound, player)
 	minetest.sound_play(sound, {
 		object = player,
-		loop = false
+		loop = false,
+		max_hear_distance = 200,
+		pitch = math.random(90,110)*.01
 	})
 end
 
@@ -55,13 +62,35 @@ end
 
 --------------------------------
 
-local function reload(stack, player)
+local function reload(stack, player, ammo)
 	-- Check for ammo
+	if not ammo then
+		return stack
+	end
+	local is_mag = minetest.get_item_group(ammo, "gunslinger_magazine") > 0
 	local inv = player:get_inventory()
-	if inv:contains_item("main", "gunslinger:ammo") then
+	if inv:contains_item("main", ammo) then
 		-- Ammo exists, reload and reset wear
-		inv:remove_item("main", "gunslinger:ammo")
-		stack:set_wear(0)
+		if is_mag then
+			local id
+			local magstack
+			local magwear = 65534
+			for i = 1, inv:get_size("main") do
+				if inv:get_stack("main", i):get_name() == ammo then
+					if inv:get_stack("main", i):get_wear() <= magwear then
+						id = i
+						magstack = inv:get_stack("main", i)
+						magwear = magstack:get_wear()
+					end
+				end
+			end
+			stack:replace({name = string.gsub(stack:get_name(), '_empty', ""), wear = magwear})
+			magstack:take_item()
+			inv:set_stack("main", id, magstack)
+		else
+			stack:set_wear(0)
+			inv:remove_item("main", ammo)
+		end
 	else
 		-- No ammo, play click sound
 		play_sound("gunslinger_ooa", player)
@@ -70,7 +99,7 @@ local function reload(stack, player)
 	return stack
 end
 
-local function fire(stack, player)
+local function fire(stack, player, base_spread, max_spread, pellets)
 	-- Workaround to prevent function from running if stack is nil
 	if not stack then
 		return
@@ -83,51 +112,91 @@ local function fire(stack, player)
 
 	local wear = stack:get_wear()
 	if wear == max_wear then
-		return reload(stack, player)
+		if def.magazine then
+			return stack
+		else
+			return reload(stack, player, def.ammo)
+		end
 	end
 
 	-- Play gunshot sound
-	play_sound(def.fire_sound)
+	play_sound(def.fire_sound, player)
 
 	-- Take aim
-	local eye_offset = {x = 0, y = 1.625, z = 0} --player:get_eye_offset().offset_first
+	local eye_offset = {x = 0, y = 1.45, z = 0} --player:get_eye_offset().offset_first
 	local dir = player:get_look_dir()
 	local p1 = vector.add(player:get_pos(), eye_offset)
 	p1 = vector.add(p1, dir)
-	local p2 = vector.add(p1, vector.multiply(dir, def.range))
-	local ray = minetest.raycast(p1, p2)
-	local pointed = ray:next()
-
-	-- Projectile particle
-	minetest.add_particle({
-		pos = p1,
-		velocity = vector.multiply(dir, 400),
-		acceleration = {x = 0, y = 0, z = 0},
-		expirationtime = 2,
-		size = 1,
-		collisiondetection = true,
-		collision_removal = true,
-		object_collision = true,
-		glow = 5
-	})
-
-	-- Fire!
-	if pointed and pointed.type == "object" then
-		local target = pointed.ref
-		local point = pointed.intersection_point
-		local dmg = def.base_dmg * def.dmg_mult
-
-		-- Add 50% damage if headshot
-		if point.y > target:get_pos().y + 1.5 then
-			dmg = dmg * 1.5
+	
+	--no point in calculating how much you should spread with distance if it's disabled
+	if max_spread then
+		local speed = vector.length(player:get_player_velocity())
+		if speed > max_speed then
+			speed = max_speed
 		end
-
-		-- Add 20% more damage if player using scope
-		if scope_overlay[player:get_player_name()] then
-			dmg = dmg * 1.2
+		--a little calculation. speed divided by max speed should always be a value between 0 and 1.
+		base_spread = base_spread + max_spread*(speed/max_speed)
+	end
+	if not pellets then pellets = 1 end
+	for i = 1, pellets do
+		if base_spread then
+			dir.x = dir.x + (math.random(-1*base_spread, base_spread))*.001
+			dir.y = dir.y + (math.random(-1*base_spread, base_spread))*.001
+			dir.z = dir.z + (math.random(-1*base_spread, base_spread))*.001
 		end
+		local p2 = vector.add(p1, vector.multiply(dir, def.range))
+		local ray = minetest.raycast(p1, p2)
+		local pointed = ray:next()
 
-		target:set_hp(target:get_hp() - dmg)
+		if pointed and pointed.intersection_point and pointed.type == "node" then
+			minetest.add_particle({
+				pos = vector.subtract(pointed.intersection_point, vector.divide(dir, 50)),
+				expirationtime = 10,
+				size = 2,
+				texture = "gunslinger_decal.png",
+				vertical = true
+			})
+		end
+		-- Projectile particle
+		minetest.add_particle({
+			pos = p1,
+			velocity = vector.multiply(dir, 400),
+			acceleration = {x = 0, y = 0, z = 0},
+			expirationtime = 2,
+			size = 1,
+			collisiondetection = true,
+			collision_removal = true,
+			object_collision = true,
+			glow = 5,
+			texture = "gunslinger_bullet.png"
+		})
+
+		-- Fire!
+		if pointed and pointed.type == "object" then
+			local target = pointed.ref
+			local point = pointed.intersection_point
+			local dmg = def.base_dmg * def.dmg_mult
+
+			-- Add 50% damage if headshot
+			if point.y > target:get_pos().y + 1.5 then
+				dmg = dmg * 1.5
+			end
+
+			-- Add 20% more damage if player using scope
+			if scope_overlay[player:get_player_name()] then
+				dmg = dmg * 1.2
+			end
+
+			target:punch(player, nil, {damage_groups={fleshy=dmg}})
+		end
+		if def.horizontal_recoil then
+			local h = player:get_look_horizontal()
+			player:set_look_horizontal(h + (math.random(-1*def.horizontal_recoil, def.horizontal_recoil))*.001)
+		end
+		if def.vertical_recoil then
+			local v = player:get_look_vertical()
+			player:set_look_vertical(v - (math.random(def.vertical_recoil/2, def.vertical_recoil))*.001)
+		end
 	end
 
 	-- Update wear
@@ -141,12 +210,12 @@ local function fire(stack, player)
 	return stack
 end
 
-local function burst_fire(stack, player)
+local function burst_fire(stack, player, base_spread, max_spread, pellets)
 	local def = gunslinger.get_def(stack:get_name())
 	local burst = def.burst or 3
 	for i = 1, burst do
 		minetest.after(i / def.fire_rate, function(st)
-			fire(st, player)
+			fire(st, player, base_spread, max_spread, pellets)
 		end, stack)
 	end
 	-- Manually add wear to stack, as functions can't return
@@ -159,10 +228,6 @@ local function burst_fire(stack, player)
 	stack:set_wear(wear)
 
 	return stack
-end
-
-local function splash_fire(stack, player)
-	-- TODO
 end
 
 --------------------------------
@@ -188,26 +253,23 @@ local function on_lclick(stack, player)
 	elseif def.mode == "hybrid"
 			and not automatic[name] then
 		if scope_overlay[name] then
-			stack = burst_fire(stack, player)
+			stack = burst_fire(stack, player, def.base_spread, def.pellets)
 		else
 			add_auto(name, def)
 		end
 	elseif def.mode == "burst" then
-		stack = burst_fire(stack, player)
-	elseif def.mode == "splash" then
-		stack = splash_fire(stack, player)
+		stack = burst_fire(stack, player, def.base_spread, def.pellets)
 	elseif def.mode == "semi-automatic" then
-		stack = fire(stack, player)
+		stack = fire(stack, player, def.base_spread, def.max_spread, def.pellets)
 	elseif def.mode == "manual" then
 		local meta = stack:get_meta()
 		if meta:contains("loaded") then
-			stack = fire(stack, player)
+			stack = fire(stack, player, def.base_spread, def.max_spread, def.pellets)
 			meta:set_string("loaded", "")
 		else
-			stack = reload(stack, player)
+			stack = reload(stack, player, def.ammo)
 			meta:set_string("loaded", "true")
 		end
-		stack:set_meta(meta)
 	end
 
 	return stack
@@ -226,24 +288,36 @@ local function on_rclick(stack, player)
 	return stack
 end
 
+local function on_q(itemstack, dropper, pos)
+	local name = itemstack:get_name()
+	local def = gunslinger.get_def(name)
+	local inv = dropper:get_inventory()
+	if inv:room_for_item("main", {name = def.ammo}) then
+		inv:add_item("main", {name = def.ammo, wear = itemstack:get_wear()})
+	else
+		minetest.add_item(pos, {name = def.ammo, wear = itemstack:get_wear()})
+	end
+	dropper:set_wielded_item({name = name.."_empty"})
+end
+
 --------------------------------
 
 local function on_step(dtime)
+	for name in pairs(interval) do
+		interval[name] = interval[name] + dtime
+	end
 	for name, info in pairs(automatic) do
 		local player = minetest.get_player_by_name(name)
 		if not player then
 			automatic[name] = nil
 			return
 		end
-
-		interval[name] = interval[name] + dtime
 		if interval[name] < info.def.unit_time then
 			return
 		end
-
 		if player:get_player_control().LMB then
 			-- If LMB pressed, fire
-			info.stack = fire(info.stack, player)
+			info.stack = fire(info.stack, player, info.def.base_spread, info.def.max_spread, info.def.pellets)
 			player:set_wielded_item(info.stack)
 			automatic[name].stack = info.stack
 			interval[name] = 0
@@ -289,9 +363,8 @@ function gunslinger.register_gun(name, def)
 			def[name] = val
 		end
 	end
-
 	-- Abort when making use of unimplemented features
-	if def.mode == "splash" or def.zoom then
+	if def.zoom then
 		error("register_gun: Unimplemented feature!")
 	end
 
@@ -302,7 +375,7 @@ function gunslinger.register_gun(name, def)
 	end
 
 	def.itemdef.on_use = on_lclick
-	def.itemdef.on_secondary_use = on_rclick
+	--[[def.itemdef.on_secondary_use = on_rclick
 	def.itemdef.on_place = function(stack, player, pointed)
 		if pointed.type == "node" then
 			local node = minetest.get_node_or_nil(pointed.under)
@@ -312,12 +385,18 @@ function gunslinger.register_gun(name, def)
 			local entity = pointed.ref:get_luaentity()
 			return entity:on_rightclick(player) or on_rclick(stack, player)
 		end
+	end--]]
+	if def.magazine then
+		def.itemdef.on_drop = on_q
+	end
+	if not def.pellets then
+		def.pellets = 1
 	end
 	if not def.dmg_mult then
 		def.dmg_mult = 1
 	end
 	if not def.fire_sound then
-		def.fire_sound = (def.mode ~= "splash")
+		def.fire_sound = (def.pellets == 1)
 			and "gunslinger_fire1" or "gunslinger_fire2"
 	end
 
@@ -330,4 +409,71 @@ function gunslinger.register_gun(name, def)
 
 	guns[name] = def
 	minetest.register_tool(name, def.itemdef)
+	if def.magazine then
+		local emtpydef = table.copy(def).itemdef
+		emtpydef.description = emtpydef.description.." (Empty)"
+		emtpydef.inventory_image = string.gsub(emtpydef.inventory_image, '.png', "").."_empty.png"
+		emtpydef.wield_image = string.gsub(emtpydef.wield_image, '.png', "").."_empty.png"
+		emtpydef.on_drop = nil
+		emtpydef.groups = {not_in_creative_inventory = 1}
+		emtpydef.on_use = function(stack, player)
+			return reload(stack, player, def.ammo)
+		end
+		minetest.register_tool(name.."_empty", emtpydef)
+	end
+end
+
+function gunslinger.register_magazine(magazine, ammunition, size)
+	minetest.override_item(magazine, {
+    groups = {gunslinger_magazine=1},
+	})
+	minetest.register_craft({
+		type = "shapeless",
+		output = magazine,
+		recipe = {magazine, ammunition},
+	})
+	minetest.register_craft({
+		type = "shapeless",
+		output = magazine.." 1 65535",
+		recipe = {magazine}
+	})
+
+	minetest.register_on_craft(function(itemstack, player, old_craft_grid, craft_inv)
+		local hasbullet
+		local hasmag
+		local magid
+		local other = false
+		for id, stack in pairs (old_craft_grid) do
+			if stack:get_name() == ammunition then
+				hasbullet = stack:get_count()
+			elseif stack:get_name() == magazine then
+				hasmag = stack:get_wear()
+				magid = id
+			elseif stack:get_name() ~= "" then
+				other = true
+			end
+		end
+		
+		if other then return end
+		
+		if hasmag and not hasbullet then
+			local bullets = math.floor((size+.5) - ((hasmag/65534)*size))
+			craft_inv:add_item("craft", {name = ammunition, count = bullets})
+		end
+		
+		if hasbullet and hasmag then
+			craft_inv:add_item("craft", {name = ammunition})
+			local needbullets = math.floor((hasmag/65534)*size+.5)
+			if needbullets == 0 then
+				return
+			end
+			if hasbullet >= needbullets then
+				itemstack:set_wear(0)
+				craft_inv:remove_item("craft", {name = ammunition, count = needbullets})
+			else
+				itemstack:set_wear(hasmag-(hasbullet*(65534/size)))
+				craft_inv:remove_item("craft", {name = ammunition, count = hasbullet})
+			end
+		end
+	end)
 end
