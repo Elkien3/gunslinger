@@ -14,6 +14,13 @@ This file aims to document all the internal and external methods of the `gunslin
 - Registers a gun with the name `name`.
 - `def` [table]: [Gun definition table](###Gun-definition-table).
 
+### `gunslinger.register_magazine(magazine, ammunition, size)
+
+- Registers a magazine. note: the gun must have def.magazine = true for it to use them.
+- `magazine` [itemstring] the itemstring of the magazine tool. (it needs to be a tool)
+- `ammunition` [itemstring] the itemstring of the ammunition it is able to hold.
+- `size` [number] the max amount of cartridges the magazine can hold.
+
 ### `gunslinger.get_def(name)`
 
 - Retrieves the [Gun definition table](###Gun-definition-table).
@@ -88,6 +95,7 @@ This file aims to document all the internal and external methods of the `gunslin
 - `spread` [number]: How much bullets will spread away from the cursor.(0 is nothing, 1000 is anywhere in front of the player (I think))
 - `base_dmg` [number]: Base amount of damage dealt in HP.
 - `pellets` [number]: Number of bullets per shot, used for shotguns.
+- `magazine` [boolean]: If the gun's ammo is a magazine, set to true, leave nil or false otherwise.
 - `mode` [string]: Firing mode.
   - `"manual"`: One shot per-click, but requires manual loading for every round; aka Bolt-action.
   - `"semi-automatic"`: One shot per-click.
