@@ -91,6 +91,12 @@ local function reload(stack, player, ammo)
 			stack:set_wear(0)
 			inv:remove_item("main", ammo)
 		end
+		minetest.sound_play("gunslinger_loadmag", {
+			object = player,
+			loop = false,
+			max_hear_distance = 30,
+			pitch = math.random(90,110)*.01
+		})
 	else
 		-- No ammo, play click sound
 		play_sound("gunslinger_ooa", player)
@@ -301,6 +307,12 @@ local function on_q(itemstack, dropper, pos)
 	else
 		minetest.add_item(pos, {name = def.ammo, wear = itemstack:get_wear()})
 	end
+	minetest.sound_play("gunslinger_dropmag", {
+		object = player,
+		loop = false,
+		max_hear_distance = 30,
+		pitch = math.random(90,110)*.01
+	})
 	dropper:set_wielded_item({name = name.."_empty"})
 end
 
