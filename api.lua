@@ -326,7 +326,7 @@ local function on_step(dtime)
 	end
 	for name, info in pairs(automatic) do
 		local player = minetest.get_player_by_name(name)
-		if not player then
+		if not player or player:get_hp() <= 0 then
 			automatic[name] = nil
 			return
 		end
