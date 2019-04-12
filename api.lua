@@ -130,6 +130,8 @@ local function fire(stack, player, base_spread, max_spread, pellets)
 
 	-- Take aim
 	local eye_offset = {x = 0, y = 1.45, z = 0} --player:get_eye_offset().offset_first
+	--local first, third = player:get_eye_offset()
+	--eye_offset = vector.add(eye_offset, first)
 	local dir = player:get_look_dir()
 	local p1 = vector.add(player:get_pos(), eye_offset)
 	p1 = vector.add(p1, dir)
@@ -328,6 +330,7 @@ local function on_step(dtime)
 			automatic[name] = nil
 			return
 		end
+		if player:get_wielded_item():get_name() ~= info.stack:get_name() then return end
 		if interval[name] < info.def.unit_time then
 			return
 		end
