@@ -93,7 +93,6 @@ local function reload(stack, player, ammo)
 		end
 		minetest.sound_play("gunslinger_loadmag", {
 			object = player,
-			loop = false,
 			max_hear_distance = 30,
 			pitch = math.random(90,110)*.01
 		})
@@ -311,8 +310,7 @@ local function on_q(itemstack, dropper, pos)
 		minetest.add_item(pos, {name = def.ammo, wear = itemstack:get_wear()})
 	end
 	minetest.sound_play("gunslinger_dropmag", {
-		object = player,
-		loop = false,
+		object = dropper,
 		max_hear_distance = 30,
 		pitch = math.random(90,110)*.01
 	})
