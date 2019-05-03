@@ -133,7 +133,7 @@ local function fire(stack, player, base_spread, max_spread, pellets)
 	--eye_offset = vector.add(eye_offset, first)
 	local dir = player:get_look_dir()
 	local p1 = vector.add(player:get_pos(), eye_offset)
-	p1 = vector.add(p1, dir)
+	--p1 = vector.add(p1, dir)
 	
 	if def.horizontal_recoil then
 		local h = player:get_look_horizontal()
