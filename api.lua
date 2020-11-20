@@ -13,6 +13,7 @@ local types = {}
 local automatic = {}
 local scope_overlay = {}
 local interval = {}
+local bloom = {}
 
 --
 -- Internal API functions
@@ -100,6 +101,7 @@ local function reload(stack, player, ammo)
 	if not ammo then
 		return stack
 	end
+	local playername = player:get_player_name()
 	local is_mag = minetest.get_item_group(ammo, "gunslinger_magazine") > 0
 	local inv = player:get_inventory()
 	if inv:contains_item("main", ammo) then
@@ -124,6 +126,15 @@ local function reload(stack, player, ammo)
 			stack:set_wear(0)
 			inv:remove_item("main", ammo)
 		end
+		local def = gunslinger.get_def(stack:get_name())
+		interval[playername] = def.unit_time-1
+		minetest.after(-interval[playername], function()
+			minetest.sound_play("gunslinger_charge", {
+				object = player,
+				max_hear_distance = 30,
+				pitch = math.random(70,90)*.01
+			})
+		end)
 		minetest.sound_play("gunslinger_loadmag", {
 			object = player,
 			max_hear_distance = 30,
@@ -211,6 +222,25 @@ local function fire(stack, player, base_spread, max_spread, pellets)
 		end
 		--a little calculation. speed divided by max speed should always be a value between 0 and 1.
 		base_spread = base_spread + max_spread*(speed/max_speed)
+		--add bloom
+		local bloomref = bloom[player:get_player_name()]
+		if bloomref then
+			base_spread = base_spread + bloomref.time or 0
+			bloomref.time = bloomref.time + def.bloom_amount or 0
+			if bloomref.time >  def.bloom_amount*4 then
+				bloomref.time = def.bloom_amount*4
+			end
+		elseif def.bloom_amount then
+			bloomref = {}
+			bloomref.time = def.bloom_amount
+			bloomref.multiplier = (def.bloom_decay or 1)*def.bloom_amount
+		end
+		
+		--don't allow spread to go beyond the maximum for the gun.
+		if base_spread > max_spread then
+			base_spread = max_spread
+		end
+		bloom[player:get_player_name()] = bloomref
 	end
 	if not pellets then pellets = 1 end
 	for i = 1, pellets do
@@ -255,9 +285,9 @@ local function fire(stack, player, base_spread, max_spread, pellets)
 			local target = pointed.ref
 			local point = pointed.intersection_point
 			local dmg = def.base_dmg * def.dmg_mult
-
+			local targetpos = target:get_pos()
 			-- Add 50% damage if headshot
-			if point.y > target:get_pos().y + 1.5 then
+			if point.y > targetpos.y + 1.5 then
 				dmg = dmg * 1.5
 			end
 
@@ -265,7 +295,9 @@ local function fire(stack, player, base_spread, max_spread, pellets)
 			if scope_overlay[player:get_player_name()] then
 				dmg = dmg * 1.2
 			end
-
+			local distmulti = -(vector.distance(p1, targetpos)/def.range)^2+1
+			dmg = dmg*distmulti
+			if dmg < 0 then dmg = 0 end
 			target:punch(player, nil, {damage_groups={fleshy=dmg}})
 		end
 	end
@@ -363,8 +395,9 @@ local function on_rclick(stack, player)
 end
 
 local function on_q(itemstack, dropper, pos)
+	local playername = dropper:get_player_name()
 	local name = itemstack:get_name()
-	if dropper:get_wielded_item():get_name() ~= name or not minetest.get_player_by_name(dropper:get_player_name()) then return end
+	if dropper:get_wielded_item():get_name() ~= name or not playername then return end
 	local def = gunslinger.get_def(name)
 	local inv = dropper:get_inventory()
 	minetest.sound_play("gunslinger_dropmag", {
@@ -383,6 +416,10 @@ end
 --------------------------------
 
 local function on_step(dtime)
+	for name, data in pairs(bloom) do
+		bloom[name].time = data.time - dtime*data.multiplier or 1
+		if data.time <= 0 then bloom[name] = nil end
+	end
 	for name in pairs(interval) do
 		interval[name] = interval[name] + dtime
 	end
@@ -418,7 +455,8 @@ end
 --
 
 function gunslinger.get_def(name)
-	return guns[name]
+	if not name then return guns end
+	return guns[name:gsub("%_empty", "")]
 end
 
 function gunslinger.register_type(name, def)
@@ -519,7 +557,7 @@ function gunslinger.register_magazine(magazine, ammunition, size)
 	minetest.register_craft({
 		type = "shapeless",
 		output = magazine,
-		recipe = {magazine, ammunition},
+		recipe = {magazine, ammunition.." "..size},
 	})
 	minetest.register_craft({
 		type = "shapeless",
