@@ -1,5 +1,5 @@
 local gunitems = {}
-local invsize = 8*4
+local invsize = minetest.settings:get("invsize") or 32
 
 minetest.register_entity("gunslinger:gunitem",{
 	hp_max = 1,
